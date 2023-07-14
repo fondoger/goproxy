@@ -1,4 +1,4 @@
-module github.com/fondoger/goproxy
+module github.com/fondoger/goproxy/forwardproxy
 
 go 1.14
 

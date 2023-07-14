@@ -1,4 +1,4 @@
-package forwardproxy
+package main
 
 import (
 	"context"

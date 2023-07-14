@@ -1,4 +1,4 @@
-package reverseproxy
+package main
 
 import (
 	"context"
