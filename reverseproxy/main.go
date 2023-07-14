@@ -1,7 +1,8 @@
-package main
+package reverseproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,21 +10,18 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 
 	"time"
-
-	"github.com/elazarl/goproxy"
 )
-
-var client = &http.Client{}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	var addr = flag.String("addr", "", "Listen host port, eg: --addr=0.0.0.0:8000")
-	var httpRelay = flag.String("http-relay", "", "(optional) Relay to http proxy, eg: --http-relay=http://127.0.0.1:8081")
+	var httpRelay = flag.String("http-relay", "", " Relay to http proxy, eg: --http-relay=http://127.0.0.1:8081")
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: goproxy --addr=0.0.0.0:8080 \n\nOptions:\n")
 		flag.PrintDefaults()
@@ -34,22 +32,32 @@ func main() {
 		return
 	}
 
-	proxy := goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	// Create a reverse proxy
+	targetUrl, _ := url.Parse(*httpRelay)
+	proxy := httputil.NewSingleHostReverseProxy(targetUrl)
 
-	if *httpRelay != "" {
-		proxyUrl, err := url.Parse(*httpRelay)
-		if err != nil {
-			log.Fatalf("failed parse http relay, err %v", err)
-		}
-		proxy.Tr.Proxy = http.ProxyURL(proxyUrl)
-		log.Printf("Serve as a http proxy relay to %v", *httpRelay)
+	// Configure the reverse proxy to handle TLS forwarding between the client and the target server
+	proxy.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	// Modify the request Host header
+	proxy.Director = func(req *http.Request) {
+		req.URL.Scheme = targetUrl.Scheme
+		req.URL.Host = targetUrl.Host
+		req.Host = targetUrl.Host
+	}
+
+	// Start the HTTP server
+	server := &http.Server{
+		Addr:    *addr,
+		Handler: proxy,
 	}
 
 	log.Println("Starting proxy server on", *addr)
 	PrintPublicIp()
 	PrintLocalIp()
-	if err := http.ListenAndServe(*addr, proxy); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}
 }
